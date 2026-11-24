@@ -249,6 +249,7 @@ loadDDCConfig(const char *ddcFileName)
         memcpy(cmd->data, fw_ptr, cmd->len);
         if (!intelSendHCISync(cmd, NULL, 0, NULL, HCI_INIT_TIMEOUT)) {
             XYLog("Failed to send Intel_Write_DDC\n");
+            OSSafeReleaseNULL(fwData);
             return false;
         }
 

@@ -7,34 +7,34 @@
 //
 
 #include <zutil.h>
+#include <stddef.h>
+
 extern "C" {
     typedef struct z_mem
     {
-        UInt32 alloc_size;
-        UInt8 data[0];
+        size_t alloc_size;
+        uint8_t data[] __attribute__((aligned(16)));
     } z_mem;
     
     void *zcalloc(void *opaque, uint items, uint size)
     {
-        void* result = NULL;
-        z_mem* zmem = NULL;
-        UInt32 allocSize =  items * size + sizeof(zmem);
+        size_t total = (size_t)items * (size_t)size;
+        size_t allocSize = sizeof(z_mem) + total;
         
-        zmem = (z_mem*)IOMalloc(allocSize);
+        z_mem *zmem = (z_mem*)IOMallocZero(allocSize);
+        if (!zmem)
+            return NULL;
         
-        if (zmem)
-        {
-            zmem->alloc_size = allocSize;
-            result = (void*)&(zmem->data);
-        }
-        
-        return result;
+        zmem->alloc_size = allocSize;
+        return (void*)zmem->data;
     }
     
     void zcfree(void *opaque, void *ptr)
     {
-        UInt32* skipper = (UInt32 *)ptr - 1;
-        z_mem* zmem = (z_mem*)skipper;
+        if (!ptr)
+            return;
+        uintptr_t addr = (uintptr_t)ptr - offsetof(z_mem, data);
+        z_mem *zmem = (z_mem*)addr;
         IOFree((void*)zmem, zmem->alloc_size);
     }
 }
@@ -46,4 +46,4 @@ int _stop(struct kmod_info*, void*) {
 int _start(struct kmod_info*, void*) {
     IOLog("_start(struct kmod_info*, void*) has been invoked\n");
     return 0;
-};    
+};

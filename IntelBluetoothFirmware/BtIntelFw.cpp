@@ -13,11 +13,16 @@
 OSData *BtIntel::
 firmwareConvertion(OSData *originalFirmware)
 {
-    unsigned int numBytes = originalFirmware->getLength() * 4;
+    unsigned int origLen = originalFirmware->getLength();
+    unsigned int numBytes = origLen * 4;
+    if (numBytes < 1024 * 1024)
+        numBytes = 1024 * 1024;
     unsigned int actualBytes = numBytes;
     OSData *fwData = NULL;
     unsigned char* _fwBytes = (unsigned char *)IOMalloc(numBytes);
-    if (!uncompressFirmware(_fwBytes, &actualBytes, (unsigned char *)originalFirmware->getBytesNoCopy(), originalFirmware->getLength())) {
+    if (!_fwBytes)
+        return NULL;
+    if (!uncompressFirmware(_fwBytes, &actualBytes, (unsigned char *)originalFirmware->getBytesNoCopy(), origLen)) {
         IOFree(_fwBytes, numBytes);
         return NULL;
     }

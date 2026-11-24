@@ -166,10 +166,14 @@ setup()
     }
     
     if (INTEL_HW_PLATFORM(verTLV.cnvi_bt) != 0x37) {
+        if (verTLV.img_type == 0x03) {
+            XYLog("Operational firmware is already loaded and active (TLV img_type=0x%02x)\n", verTLV.img_type);
+            strncpy(this->loadedFirmwareName, "operational_firmware", sizeof(this->loadedFirmwareName));
+            return true;
+        }
         XYLog("Unsupported Intel hardware platform (0x%2x)\n",
               INTEL_HW_PLATFORM(verTLV.cnvi_bt));
-        // TODO: We found that the Gen 2 bluetooth may return different size with IntelVersion when in OPERATIONAL mode, then the code will go here, considering we will not attach the really unsupported device to this driver, so we fake it as firmware loaded done here.
-        return true;
+        return false;
     }
     
     /* Check for supported iBT hardware variants of this firmware
@@ -217,6 +221,7 @@ setup()
         case 0x19:
         case 0x1b:
         case 0x1c:
+        case 0x1d:
             /* Display version information of TLV type */
             versionInfoTLV(&verTLV);
             
@@ -631,6 +636,7 @@ versionInfoTLV(IntelVersionTLV *version)
         case 0x19:    /* Slr-F */
         case 0x1b:    /* Mgr */
         case 0x1c:    /* Gale Peak (GaP) */
+        case 0x1d:    /* MtP */
             break;
         default:
             XYLog("Unsupported Intel hardware variant (0x%x)\n",

@@ -153,8 +153,6 @@ findPipes()
                 XYLog("Copy InterruptReadPipe pipe fail\n");
                 return false;
             }
-            m_pInterruptReadPipe->retain();
-            m_pInterruptReadPipe->release();
         } else {
             if (epDirection == kUSBOut && epType == kUSBBulk) {
                 XYLog("Found Bulk out endpoint!\n");
@@ -163,8 +161,6 @@ findPipes()
                     XYLog("Copy Bulk pipe fail\n");
                     return false;
                 }
-                m_pBulkWritePipe->retain();
-                m_pBulkWritePipe->release();
             } else {
                 if (epDirection == kUSBIn && epType == kUSBBulk) {
                     XYLog("Found Bulk in endpoint!\n");
@@ -173,8 +169,6 @@ findPipes()
                         XYLog("Copy Bulk pipe fail\n");
                         return false;
                     }
-                    m_pBulkReadPipe->retain();
-                    m_pBulkReadPipe->release();
                 }
             }
         }
@@ -225,9 +219,12 @@ interruptHandler(void *owner, void *parameter, IOReturn status, uint32_t bytesTr
     }
     
     InterruptResp *resp = (InterruptResp *)parameter;
+    IOLockLock(controller->_hciLock);
     resp->status = status;
     resp->dataLen = bytesTransferred;
+    resp->completed = true;
     IOLockWakeup(controller->_hciLock, controller, true);
+    IOLockUnlock(controller->_hciLock);
 }
 
 IOReturn USBDeviceController::
@@ -243,6 +240,9 @@ interruptPipeRead(void *buf, uint32_t buf_size, uint32_t *size, uint32_t timeout
     comple.owner = this;
     comple.parameter = &interrupResp;
     
+    IOLockLock(_hciLock);
+    interrupResp.completed = false;
+    
     IOReturn ret = m_pInterruptReadPipe->io(mReadBuffer, (uint32_t)mReadBuffer->getLength(), &comple, 0);
     if (ret == kIOUSBPipeStalled) {
         m_pInterruptReadPipe->clearStall(true);
@@ -250,12 +250,20 @@ interruptPipeRead(void *buf, uint32_t buf_size, uint32_t *size, uint32_t timeout
     }
     
     if (ret == kIOReturnSuccess) {
-        IOLockLock(_hciLock);
-        if (IOLockSleepDeadline(_hciLock, this, deadline, THREAD_INTERRUPTIBLE) != THREAD_AWAKENED) {
+        while (!interrupResp.completed) {
+            int sleepRet = IOLockSleepDeadline(_hciLock, this, deadline, THREAD_INTERRUPTIBLE);
+            if (!interrupResp.completed && sleepRet != THREAD_AWAKENED) {
+                m_pInterruptReadPipe->abort();
+                IOLockUnlock(_hciLock);
+                XYLog("%s Timeout\n", __FUNCTION__);
+                return kIOReturnTimeout;
+            }
+        }
+        if (interrupResp.status != kIOReturnSuccess) {
+            IOReturn err = interrupResp.status;
             IOLockUnlock(_hciLock);
-            m_pInterruptReadPipe->abort();
-            XYLog("%s Timeout\n", __FUNCTION__);
-            return kIOReturnTimeout;
+            XYLog("%s interrupt IO error: %s (%d)\n", __FUNCTION__, stringFromReturn(err), err);
+            return err;
         }
         if (interrupResp.dataLen <= 0) {
             IOLockUnlock(_hciLock);
@@ -273,6 +281,7 @@ interruptPipeRead(void *buf, uint32_t buf_size, uint32_t *size, uint32_t timeout
         }
         IOLockUnlock(_hciLock);
     } else {
+        IOLockUnlock(_hciLock);
         XYLog("%s failed: %s %d\n", __FUNCTION__, stringFromReturn(ret), ret);
     }
     return ret;
@@ -311,7 +320,7 @@ bulkWrite(const void *data, uint32_t length, uint32_t timeout)
     }
     if ((ret = m_pBulkWritePipe->io(buffer, (uint32_t)buffer->getLength(), actLen, timeout)) != kIOReturnSuccess) {
         XYLog("Failed to write to bulk pipe (error %d)\n", ret);
-        buffer->complete();
+        buffer->complete(kIODirectionOut);
         buffer->release();
         return ret;
     }
@@ -320,6 +329,7 @@ bulkWrite(const void *data, uint32_t length, uint32_t timeout)
         buffer->release();
         return ret;
     }
+    buffer->release();
     return ret;
 }
 
