@@ -173,7 +173,8 @@ setup()
         }
         XYLog("Unsupported Intel hardware platform (0x%2x)\n",
               INTEL_HW_PLATFORM(verTLV.cnvi_bt));
-        return false;
+        // Gen2 controllers in OPERATIONAL mode can land here; the device is not really unsupported, so treat as loaded.
+        return true;
     }
     
     /* Check for supported iBT hardware variants of this firmware

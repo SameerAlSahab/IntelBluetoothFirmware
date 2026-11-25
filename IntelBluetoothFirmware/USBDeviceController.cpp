@@ -253,7 +253,16 @@ interruptPipeRead(void *buf, uint32_t buf_size, uint32_t *size, uint32_t timeout
         while (!interrupResp.completed) {
             int sleepRet = IOLockSleepDeadline(_hciLock, this, deadline, THREAD_INTERRUPTIBLE);
             if (!interrupResp.completed && sleepRet != THREAD_AWAKENED) {
+                // abort() completes synchronously and the handler takes _hciLock, so drop it first.
+                IOLockUnlock(_hciLock);
                 m_pInterruptReadPipe->abort();
+                IOLockLock(_hciLock);
+                // The handler writes into our stack frame: wait (bounded) until it has run.
+                for (int i = 0; i < 20 && !interrupResp.completed; i++) {
+                    AbsoluteTime d;
+                    clock_interval_to_deadline(100, kMillisecondScale, reinterpret_cast<uint64_t*> (&d));
+                    IOLockSleepDeadline(_hciLock, this, d, THREAD_UNINT);
+                }
                 IOLockUnlock(_hciLock);
                 XYLog("%s Timeout\n", __FUNCTION__);
                 return kIOReturnTimeout;

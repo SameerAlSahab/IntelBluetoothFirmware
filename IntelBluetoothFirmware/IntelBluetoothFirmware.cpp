@@ -119,16 +119,6 @@ void IntelBluetoothFirmware::cleanUp()
 
 IOReturn IntelBluetoothFirmware::setPowerState(unsigned long powerStateOrdinal, IOService *whatDevice)
 {
-    XYLog("setPowerState powerStateOrdinal=%lu\n", powerStateOrdinal);
-    if (powerStateOrdinal == kMyOnPowerState) {
-        IOUSBHostDevice *dev = OSDynamicCast(IOUSBHostDevice, getProvider());
-        if (dev) {
-            dev->setProperty("FirmwareLoaded", true);
-            if (version_major >= 21) {
-                dev->setName("Bluetooth USB Host Controller");
-            }
-        }
-    }
     return IOPMAckImplied;
 }
 
